@@ -1,10 +1,9 @@
 import 'dart:async';
 
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:device_info_plus/device_info_plus.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -65,6 +64,8 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
+
+  List<Map<String, dynamic>> offlineList = [];
   await Firebase.initializeApp();
   firestore = FirebaseFirestore.instance;
 
@@ -111,40 +112,39 @@ void onStart(ServiceInstance service) async {
       );
     }
   }
+
   Timer.periodic(const Duration(seconds: 30), (timer) {
     geolocatorPlatform.getCurrentPosition().then((value) async {
-      if (firestore != null) {
-        await firestore
-            ?.collection('users')
-            .doc(FirebaseAuth.instance.currentUser?.uid)
-            .set({
-          "location": FieldValue.arrayUnion([value.toJson()])
-        }, SetOptions(merge: true));
+      final connectivityRes = await Connectivity().checkConnectivity();
+
+      if (connectivityRes == ConnectivityResult.mobile ||
+          connectivityRes == ConnectivityResult.wifi ||
+          connectivityRes == ConnectivityResult.vpn) {
+        if (offlineList.isNotEmpty) {
+          await firestore
+              ?.collection('users')
+              .doc(FirebaseAuth.instance.currentUser?.uid)
+              .set({"location": FieldValue.arrayUnion(offlineList)},
+                  SetOptions(merge: true));
+          offlineList.clear();
+        }
+
+        if (firestore != null && offlineList.isEmpty) {
+          await firestore
+              ?.collection('users')
+              .doc(FirebaseAuth.instance.currentUser?.uid)
+              .set({
+            "location": FieldValue.arrayUnion([value.toJson()])
+          }, SetOptions(merge: true));
+        }
+      } else {
+        offlineList.add(value.toJson());
       }
     });
   });
 
-  /// you can see this log in logcat
-  // print('FLUTTER BACKGROUND SERVICE: ${DateTime.now()}');
-
-  // test using external plugin
-  final deviceInfo = DeviceInfoPlugin();
-  String? device;
-  if (Platform.isAndroid) {
-    final androidInfo = await deviceInfo.androidInfo;
-    device = androidInfo.model;
-  }
-
-  if (Platform.isIOS) {
-    final iosInfo = await deviceInfo.iosInfo;
-    device = iosInfo.model;
-  }
-
   service.invoke(
     'update',
-    {
-      "current_date": DateTime.now().toIso8601String(),
-      "device": device,
-    },
+    {"current_date": DateTime.now().toIso8601String()},
   );
 }
