@@ -1,270 +1,150 @@
 import 'dart:async';
+
 import 'dart:io';
-import 'dart:math';
+import 'dart:ui';
 
-import 'package:background_location_tracker/background_location_tracker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_phoenix/flutter_phoenix.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:staff_tracker_user/pages/home_page.dart';
+import 'package:staff_tracker_user/pages/register_page.dart';
 
-@pragma('vm:entry-point')
-void backgroundCallback() {
-  BackgroundLocationTrackerManager.handleBackgroundUpdated(
-    (data) async => Repo().update(data),
-  );
-}
+import 'firebase_options.dart';
+
+late final FirebaseApp app;
+late final FirebaseAuth auth;
+FirebaseFirestore? firestore;
+final GeolocatorPlatform geolocatorPlatform = GeolocatorPlatform.instance;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await BackgroundLocationTrackerManager.initialize(
-    backgroundCallback,
-    config: const BackgroundLocationTrackerConfig(
-      loggingEnabled: true,
-      androidConfig: AndroidConfig(
-        notificationIcon: 'explore',
-        trackingInterval: Duration(seconds: 4),
-        distanceFilterMeters: null,
-      ),
-      iOSConfig: IOSConfig(
-        activityType: ActivityType.FITNESS,
-        distanceFilterMeters: null,
-        restartAfterKill: true,
-      ),
-    ),
+  app = await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  runApp(const MyApp());
+  auth = FirebaseAuth.instance;
+
+  runApp(Phoenix(child: const StaffTracker()));
 }
 
-@override
-class MyApp extends StatefulWidget {
-  const MyApp({super.key});
-
-  @override
-  _MyAppState createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  var isTracking = false;
-
-  Timer? _timer;
-  List<String> _locations = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _getTrackingStatus();
-    _startLocationsUpdatesStream();
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
+class StaffTracker extends StatelessWidget {
+  const StaffTracker({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Plugin example app'),
-        ),
-        body: SizedBox(
-          width: double.infinity,
-          child: Column(
-            children: [
-              Expanded(
-                child: Column(
-                  children: [
-                    MaterialButton(
-                      onPressed: _requestLocationPermission,
-                      child: const Text('Request location permission'),
-                    ),
-                    if (Platform.isAndroid) ...[
-                      const Text(
-                          'Permission on android is only needed starting from sdk 33.'),
-                    ],
-                    MaterialButton(
-                      onPressed: _requestNotificationPermission,
-                      child: const Text('Request Notification permission'),
-                    ),
-                    MaterialButton(
-                      child: const Text('Send notification'),
-                      onPressed: () =>
-                          sendNotification('Hello from another world'),
-                    ),
-                    MaterialButton(
-                      onPressed: isTracking
-                          ? null
-                          : () async {
-                              await BackgroundLocationTrackerManager
-                                  .startTracking();
-                              setState(() => isTracking = true);
-                            },
-                      child: const Text('Start Tracking'),
-                    ),
-                    MaterialButton(
-                      onPressed: isTracking
-                          ? () async {
-                              await LocationDao().clear();
-                              await _getLocations();
-                              await BackgroundLocationTrackerManager
-                                  .stopTracking();
-                              setState(() => isTracking = false);
-                            }
-                          : null,
-                      child: const Text('Stop Tracking'),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                color: Colors.black12,
-                height: 2,
-              ),
-              const Text('Locations'),
-              MaterialButton(
-                onPressed: _getLocations,
-                child: const Text('Refresh locations'),
-              ),
-              Expanded(
-                child: Builder(
-                  builder: (context) {
-                    if (_locations.isEmpty) {
-                      return const Text('No locations saved');
-                    }
-                    return ListView.builder(
-                      itemCount: _locations.length,
-                      itemBuilder: (context, index) => Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        child: Text(
-                          _locations[index],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blue),
+      home: auth.currentUser != null ? const HomePage() : const RegisterPage(),
     );
   }
+}
 
-  Future<void> _getTrackingStatus() async {
-    isTracking = await BackgroundLocationTrackerManager.isTracking();
-    setState(() {});
-  }
+@pragma('vm:entry-point')
+Future<bool> onIosBackground(ServiceInstance service) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  DartPluginRegistrant.ensureInitialized();
 
-  Future<void> _requestLocationPermission() async {
-    final result = await Permission.locationAlways.request();
-    if (result == PermissionStatus.granted) {
-      print('GRANTED'); // ignore: avoid_print
-    } else {
-      print('NOT GRANTED'); // ignore: avoid_print
-    }
-  }
+  SharedPreferences preferences = await SharedPreferences.getInstance();
+  await preferences.reload();
+  final log = preferences.getStringList('log') ?? <String>[];
+  log.add(DateTime.now().toIso8601String());
+  await preferences.setStringList('log', log);
 
-  Future<void> _requestNotificationPermission() async {
-    final result = await Permission.notification.request();
-    if (result == PermissionStatus.granted) {
-      print('GRANTED'); // ignore: avoid_print
-    } else {
-      print('NOT GRANTED'); // ignore: avoid_print
-    }
-  }
+  return true;
+}
 
-  Future<void> _getLocations() async {
-    final locations = await LocationDao().getLocations();
-    setState(() {
-      _locations = locations;
+@pragma('vm:entry-point')
+void onStart(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
+  await Firebase.initializeApp();
+  firestore = FirebaseFirestore.instance;
+
+  /// OPTIONAL when use custom notification
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  if (service is AndroidServiceInstance) {
+    service.on('setAsForeground').listen((event) {
+      service.setAsForegroundService();
+    });
+
+    service.on('setAsBackground').listen((event) {
+      service.setAsBackgroundService();
     });
   }
 
-  void _startLocationsUpdatesStream() {
-    _timer?.cancel();
-    _timer = Timer.periodic(
-        const Duration(milliseconds: 250), (timer) => _getLocations());
+  service.on('stopService').listen((event) {
+    service.stopSelf();
+  });
+
+  if (service is AndroidServiceInstance) {
+    if (await service.isForegroundService()) {
+      /// OPTIONAL for use custom notification
+      /// the notification id must be equals with AndroidConfiguration when you call configure() method.
+      flutterLocalNotificationsPlugin.show(
+        888,
+        'COOL SERVICE',
+        'Awesome ${DateTime.now()}',
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'my_foreground',
+            'MY FOREGROUND SERVICE',
+            icon: 'ic_bg_service_small',
+            ongoing: true,
+          ),
+        ),
+      );
+
+      // if you don't using custom notification, uncomment this
+      service.setForegroundNotificationInfo(
+        title: "My App Service",
+        content: "Updated at ${DateTime.now()}",
+      );
+    }
   }
-}
+  Timer.periodic(const Duration(seconds: 30), (timer) {
+    geolocatorPlatform.getCurrentPosition().then((value) async {
+      if (firestore != null) {
+        await firestore
+            ?.collection('users')
+            .doc(FirebaseAuth.instance.currentUser?.uid)
+            .set({
+          "location": FieldValue.arrayUnion([value.toJson()])
+        }, SetOptions(merge: true));
+      }
+    });
+  });
 
-class Repo {
-  static Repo? _instance;
+  /// you can see this log in logcat
+  // print('FLUTTER BACKGROUND SERVICE: ${DateTime.now()}');
 
-  Repo._();
-
-  factory Repo() => _instance ??= Repo._();
-
-  Future<void> update(BackgroundLocationUpdateData data) async {
-    final text = 'Location Update: Lat: ${data.lat} Lon: ${data.lon}';
-    print(text); // ignore: avoid_print
-    sendNotification(text);
-    await LocationDao().saveLocation(data);
-  }
-}
-
-class LocationDao {
-  static const _locationsKey = 'background_updated_locations';
-  static const _locationSeparator = '-/-/-/';
-
-  static LocationDao? _instance;
-
-  LocationDao._();
-
-  factory LocationDao() => _instance ??= LocationDao._();
-
-  SharedPreferences? _prefs;
-
-  Future<SharedPreferences> get prefs async =>
-      _prefs ??= await SharedPreferences.getInstance();
-
-  Future<void> saveLocation(BackgroundLocationUpdateData data) async {
-    final locations = await getLocations();
-    locations.add(
-        '${DateTime.now().toIso8601String()}       ${data.lat},${data.lon}');
-    await (await prefs)
-        .setString(_locationsKey, locations.join(_locationSeparator));
+  // test using external plugin
+  final deviceInfo = DeviceInfoPlugin();
+  String? device;
+  if (Platform.isAndroid) {
+    final androidInfo = await deviceInfo.androidInfo;
+    device = androidInfo.model;
   }
 
-  Future<List<String>> getLocations() async {
-    final prefs = await this.prefs;
-    await prefs.reload();
-    final locationsString = prefs.getString(_locationsKey);
-    if (locationsString == null) return [];
-    return locationsString.split(_locationSeparator);
+  if (Platform.isIOS) {
+    final iosInfo = await deviceInfo.iosInfo;
+    device = iosInfo.model;
   }
 
-  Future<void> clear() async => (await prefs).clear();
-}
-
-void sendNotification(String text) {
-  const settings = InitializationSettings(
-    android: AndroidInitializationSettings('app_icon'),
-    iOS: DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    ),
-  );
-  FlutterLocalNotificationsPlugin().initialize(
-    settings,
-    onDidReceiveNotificationResponse: (details) {},
-    onDidReceiveBackgroundNotificationResponse: (details) {},
-  );
-  FlutterLocalNotificationsPlugin().show(
-    Random().nextInt(9999),
-    'Title',
-    text,
-    const NotificationDetails(
-      android: AndroidNotificationDetails('test_notification', 'Test'),
-      iOS: DarwinNotificationDetails(),
-    ),
+  service.invoke(
+    'update',
+    {
+      "current_date": DateTime.now().toIso8601String(),
+      "device": device,
+    },
   );
 }
