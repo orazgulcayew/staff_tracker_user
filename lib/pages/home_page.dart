@@ -20,15 +20,19 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  String text = "Stop Service";
   bool hasConnection = true;
   bool serviceEnabled = false;
   bool isLoading = true;
   StreamSubscription? subscription;
 
+  IconData serviceStateIcon = Icons.play_arrow_rounded;
+
   @override
   void initState() {
     super.initState();
+
+    // checkService();
+
     subscription = Connectivity()
         .onConnectivityChanged
         .listen((ConnectivityResult result) {
@@ -79,6 +83,25 @@ class _HomePageState extends State<HomePage> {
               "Hasapdan çyk",
               style: TextStyle(fontSize: 12),
             )),
+        // IconButton(
+        //     onPressed: () async {
+        //       final service = FlutterBackgroundService();
+        //       var isRunning = await service.isRunning();
+        //       if (isRunning) {
+        //         service.invoke("stopService");
+        //       } else {
+        //         service.startService();
+        //       }
+
+        //       setState(() {
+        //         if (!isRunning) {
+        //           serviceStateIcon = Icons.play_arrow_rounded;
+        //         } else {
+        //           serviceStateIcon = Icons.stop_rounded;
+        //         }
+        //       });
+        //     },
+        //     icon: Icon(serviceStateIcon)),
         const Gap(16)
       ]),
       body: Padding(
@@ -377,6 +400,13 @@ class _HomePageState extends State<HomePage> {
     service.startService();
   }
 
-// to ensure this is executed
-// run app from xcode, then from xcode menu, select Simulate Background Fetch
+  void checkService() async {
+    final service = FlutterBackgroundService();
+    var isRunning = await service.isRunning();
+    if (!isRunning) {
+      serviceStateIcon = Icons.play_arrow_rounded;
+    } else {
+      serviceStateIcon = Icons.stop_rounded;
+    }
+  }
 }

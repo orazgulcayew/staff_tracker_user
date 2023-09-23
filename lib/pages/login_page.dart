@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
+import 'package:staff_tracker_user/pages/register_page.dart';
 
 import '../main.dart';
 import 'home_page.dart';
@@ -54,7 +55,16 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const Gap(12),
               const Text('Hasabyňyz ýokmy?'),
-              TextButton(child: const Text('Hasap döret'), onPressed: () {}),
+              TextButton(
+                  child: const Text('Hasap döret'),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const RegisterPage(),
+                      ),
+                    );
+                  }),
               const Gap(48),
               SizedBox(
                 width: double.infinity,

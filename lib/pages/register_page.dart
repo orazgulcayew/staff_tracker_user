@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
@@ -142,6 +143,16 @@ class _RegisterPageState extends State<RegisterPage> {
       try {
         await user?.updateDisplayName(nameController.text);
         await user?.reload();
+
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user?.uid)
+            .set({
+          'name': nameController.text,
+          'uid': user?.uid,
+          'email': emailController.text,
+          'password': passwordController.text
+        });
       } on FirebaseException catch (e) {
         debugPrint('Error updating user profile: $e');
         throw Exception(e.message);

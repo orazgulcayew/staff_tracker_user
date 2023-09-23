@@ -122,7 +122,7 @@ void onStart(ServiceInstance service) async {
           connectivityRes == ConnectivityResult.vpn) {
         if (offlineList.isNotEmpty) {
           await firestore
-              ?.collection('users')
+              ?.collection('locations')
               .doc(FirebaseAuth.instance.currentUser?.uid)
               .set({"location": FieldValue.arrayUnion(offlineList)},
                   SetOptions(merge: true));
@@ -131,7 +131,7 @@ void onStart(ServiceInstance service) async {
 
         if (firestore != null && offlineList.isEmpty) {
           await firestore
-              ?.collection('users')
+              ?.collection('locations')
               .doc(FirebaseAuth.instance.currentUser?.uid)
               .set({
             "location": FieldValue.arrayUnion([value.toJson()])
